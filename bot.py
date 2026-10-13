@@ -1,9 +1,29 @@
 import telebot
 import time
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 # Оригинальный токен из проекта Кристины
 BOT_TOKEN = "8734369365:AAGnuppzo749GUgkc4wnU0vTQEt2oFbP__M"
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# --- МИКРО ВЕБ-СЕРВЕР ДЛЯ СТАТУСА LIVE НА RENDER ---
+class PingHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+
+    def log_message(self, format, *args):
+        return  # Отключаем лишние логи в консоли
+
+def run_web_server():
+    server_address = ('0.0.0.0', 10000)  # Тот самый порт 10000, который ищет Render
+    httpd = HTTPServer(server_address, PingHandler)
+    print("=== ВЕБ-СЕРВЕР ДЛЯ ПОРТА 10000 ЗАПУЩЕН ===")
+    httpd.serve_forever()
+# --------------------------------------------------
 
 # Приветственное сообщение на кнопку "Старт"
 @bot.message_handler(commands=['start'])
@@ -21,12 +41,9 @@ def cmd_start(message):
 @bot.message_handler(func=lambda message: True)
 def handle_user_query(message):
     user_text = message.text.lower()
-    
-    # Имитируем статус "печатает..."
     bot.send_chat_action(message.chat.id, 'typing')
     time.sleep(1)
 
-    # 1. Вопрос про Жасыбай
     if "жасыбай" in user_text or "взять" in user_text:
         bot_reply = (
             "👋 Привет! Для поездки на Жасыбай рекомендую взять:\n"
@@ -38,46 +55,32 @@ def handle_user_query(message):
             "• Наличка — Kaspi не ловит, терминалов почти нет\n\n"
             "⛺ Совет: солнцезащитный крем и вода, мест для покупок там нет. Хорошего отдыха!"
         )
-    
-    # 2. Вопрос про еду
     elif "поесть" in user_text or "4000" in user_text or "кафе" in user_text:
         bot_reply = (
             "Вот 2 отличных варианта до 4000 ₸ в Баянауле 🙂\n\n"
             "📍 **Кафе «Балдай»**\n"
             "• Лагман — 1600 ₸\n"
             "• Плов — 1800 ₸\n"
-            "• Салат овощной — 600 ₸\n"
             "💵 Средний чек: ~3000–3500 ₸\n"
             "📍 Ул. Абая 21, центр, 5 мин от пляжа\n"
             "✅ Оплата: Kaspi QR доступен\n\n"
-            "📍 **Кафе «Самал**\n"
+            "📍 **Кафе «Самал»**\n"
             "• Бешбармак — 2200 ₸\n"
             "• Самса — 350  ₸ / шт\n"
-            "• Чай + лепешка — 400 ₸\n"
             "💵 Средний чек: ~2600–3000 ₸\n"
             "📍 Ул. Нурсултана 8, рядом с парком\n"
-            "✅ Оплата: Kaspi QR доступен\n\n"
-            "**Рекомендация Qonaq AI:**\n"
-            "• Если хотите быстрее — берите в «Самал», там готовят 10–15 мин.\n"
-            "• В «Балдай» больше порции, можно на двоих поделить."
+            "✅ Оплата: Kaspi QR доступен"
         )
-        
-    # 3. Вопрос про маршрут
     elif "маршрут" in user_text or "1 день" in user_text or "павлодар" in user_text:
         bot_reply = (
             "Готов маршрут на 1 день в Павлодаре! 🇰🇿\n\n"
             "🏛 **Утро — 09:00–12:00**\n"
             "• Набережная Иртыша — прогулка вдоль реки\n"
-            "• Краеведческий музей им. Г. Потанина\n"
-            "💰 Вход: 500 ₸\n\n"
+            "• Краеведческий музей им. Г. Потанина (Вход: 500 ₸)\n\n"
             "☀️ **Обед — 12:30–14:00**\n"
-            "• Кафе \"Шанырак\" — бешбармак, лагман\n"
-            "💰 Средний чек: 2500–3500 ₸\n\n"
+            "• Кафе \"Шанырак\" — средний чек: 2500–3500 ₸\n\n"
             "🏙 **Вечер — 15:00–19:00**\n"
-            "• Парк Гагарина и ТРЦ \"Batyr Mall\"\n\n"
-            "**Итого на день:**\n"
-            "≈ 6500–9500 ₸ без такси\n"
-            "💡 Лайфхак: летом бери воду + кепку, в октябре куртка пригодится!"
+            "• Парк Гагарина и ТРЦ \"Batyr Mall\""
         )
     else:
         bot_reply = "Я получил ваш запрос! Информации по этому объекту пока нет в базе. Рекомендую обратиться в ТИЦ Павлодара."
@@ -85,5 +88,9 @@ def handle_user_query(message):
     bot.send_message(message.chat.id, bot_reply, parse_mode="Markdown")
 
 if __name__ == "__main__":
+    # Запускаем веб-сервер в отдельном потоке, чтобы он отвечал Render
+    web_thread = threading.Thread(target=run_web_server, daemon=True)
+    web_thread.start()
+    
     print("=== ОРИГИНАЛЬНЫЙ БОТ КРИСТИНЫ ЗАПУЩЕН ===")
     bot.infinity_polling()
