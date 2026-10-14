@@ -16,7 +16,7 @@ from telebot import apihelper, types
 from waitress import serve
 
 LOG = logging.getLogger('qonaq')
-VERSION = 'qonaq-webhook-1'
+VERSION = 'qonaq-webhook-2'
 # Отпечаток опубликованного токена. Самого секрета в коде нет.
 COMPROMISED_TOKEN_HASHES = {
     '3f05b93d6584ec427cf0b9775bcc4ec5d9a127902dc82677a75caaef0717c2cf',
@@ -175,6 +175,55 @@ def create_app(bot=None, secret='', db_path='updates.sqlite3'):
     return app
 
 
+def restore_profile(app, bot, previous_name=''):
+    """Ошибка одного поля не мешает восстановить остальные."""
+    actions = [
+        ('name', lambda: bot.set_my_name('Qonaq AI Bot')),
+        ('name_ru', lambda: bot.set_my_name('Qonaq AI Bot', language_code='ru')),
+        ('name_en', lambda: bot.set_my_name('Qonaq AI Bot', language_code='en')),
+        ('name_kk', lambda: bot.set_my_name('Qonaq AI Bot', language_code='kk')),
+        ('description', lambda: bot.set_my_description(
+            'Школьный гид по Павлодару и Баянаулу. '
+            'Советы для поездки, питание и прогулки. Начните с /start.')),
+        ('short_description', lambda: bot.set_my_short_description(
+            'Школьный туристический помощник: Павлодар и Баянаул.')),
+        ('commands', lambda: bot.set_my_commands([
+            types.BotCommand('start', 'Открыть меню'),
+            types.BotCommand('help', 'Помощь'),
+            types.BotCommand('about', 'О проекте')]))
+    ]
+    statuses = {label: 'pending' for label, _ in actions}
+    app.config['PROFILE_STATUS'] = statuses
+
+    def apply(label, action, attempt=0):
+        try:
+            action()
+            statuses[label] = 'restored'
+            LOG.info('Profile %s restored', label)
+            if label == 'name' and 'ikhdev' in previous_name.casefold():
+                try:
+                    bot.remove_my_profile_photo()
+                    LOG.info('Foreign advertising profile photo removed')
+                except Exception as exc:
+                    LOG.warning('Profile photo cleanup failed: type=%s', type(exc).__name__)
+        except apihelper.ApiTelegramException as exc:
+            detail = re.sub(r'\b\d{6,}:[A-Za-z0-9_-]{20,}', '<TOKEN_REMOVED>', exc.description)
+            statuses[label] = 'failed'
+            LOG.warning('Profile %s failed: code=%s detail=%s', label, exc.error_code, detail[:250])
+            retry_after = exc.result_json.get('parameters', {}).get('retry_after')
+            if exc.error_code == 429 and type(retry_after) is int and retry_after > 0 and attempt < 2:
+                statuses[label] = 'rate_limited'
+                timer = threading.Timer(retry_after + 1, apply, args=(label, action, attempt + 1))
+                timer.daemon = True
+                timer.start()
+        except Exception as exc:
+            statuses[label] = 'failed'
+            LOG.warning('Profile %s failed: type=%s', label, type(exc).__name__)
+
+    for label, action in actions:
+        apply(label, action)
+
+
 def configure_telegram(app, bot, base_url, secret, expected_username):
     try:
         me = bot.get_me()
@@ -191,16 +240,7 @@ def configure_telegram(app, bot, base_url, secret, expected_username):
         app.config['BOT_READY'] = True
         app.config['BOT_STATE'] = 'ready'
         LOG.info('Webhook ready for @%s', me.username)
-        try:
-            bot.set_my_name('Qonaq AI Bot')
-            bot.set_my_description('Школьный гид по Павлодару и Баянаулу. '
-                                   'Советы для поездки, питание и прогулки. Начните с /start.')
-            bot.set_my_short_description('Школьный туристический помощник: Павлодар и Баянаул.')
-            bot.set_my_commands([types.BotCommand('start', 'Открыть меню'),
-                                 types.BotCommand('help', 'Помощь'),
-                                 types.BotCommand('about', 'О проекте')])
-        except Exception as exc:
-            LOG.warning('Profile setup failed: type=%s', type(exc).__name__)
+        restore_profile(app, bot, getattr(me, 'first_name', ''))
     except Exception as exc:
         app.config['BOT_STATE'] = 'telegram_setup_failed'
         LOG.error('Telegram setup failed: type=%s. Check token and restart service.',
@@ -216,7 +256,7 @@ def main():
     token = os.environ.get('BOT_TOKEN', '').strip()
     base_url = os.environ.get('WEBHOOK_URL', os.environ.get('RENDER_EXTERNAL_URL', '')).strip()
     secret = os.environ.get('WEBHOOK_SECRET', '').strip()
-    expected = os.environ.get('EXPECTED_BOT_USERNAME', 'Qonaq_Pavlodar_bot').lstrip('@')
+    expected = os.environ.get('EXPECTED_BOT_USERNAME', 'qonaq_pavl_tour_bot').lstrip('@')
     parts = urlsplit(base_url)
     valid = bool(token and re.fullmatch(r'[A-Za-z0-9_-]{32,256}', secret)
                  and parts.scheme == 'https' and parts.hostname

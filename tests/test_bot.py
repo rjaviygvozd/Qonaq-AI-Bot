@@ -146,7 +146,7 @@ class WebhookTests(unittest.TestCase):
             self.assertEqual(fake.set_webhook.call_args.kwargs['drop_pending_updates'], drop)
             self.assertEqual(fake.set_webhook.call_args.kwargs['secret_token'], SECRET)
             self.assertTrue(self.app.config['BOT_READY'])
-        fake.set_my_name.assert_called_with('Qonaq AI Bot')
+        self.assertIn(unittest.mock.call('Qonaq AI Bot'), fake.set_my_name.call_args_list)
 
     def test_wrong_bot_token_does_not_change_webhook(self):
         fake = MagicMock()
@@ -157,6 +157,25 @@ class WebhookTests(unittest.TestCase):
         self.assertFalse(self.app.config['BOT_READY'])
         self.assertEqual(self.app.config['BOT_STATE'], 'wrong_bot_token')
         fake.set_webhook.assert_not_called()
+
+    def test_profile_name_failure_does_not_block_commands_and_description(self):
+        fake = MagicMock()
+        fake.set_my_name.side_effect = apihelper.ApiTelegramException('setMyName', None, {
+            'ok': False, 'error_code': 400, 'description': 'Name temporarily restricted'})
+        project.restore_profile(self.app, fake, 'Ikhdev API — AI Gateway')
+        fake.set_my_description.assert_called_once()
+        fake.set_my_short_description.assert_called_once()
+        fake.set_my_commands.assert_called_once()
+        fake.remove_my_profile_photo.assert_not_called()
+        self.assertEqual(self.app.config['PROFILE_STATUS']['commands'], 'restored')
+
+    def test_foreign_avatar_removed_after_name_is_restored(self):
+        fake = MagicMock()
+        project.restore_profile(self.app, fake, 'Ikhdev API — AI Gateway')
+        fake.remove_my_profile_photo.assert_called_once()
+        fake.reset_mock()
+        project.restore_profile(self.app, fake, 'Qonaq AI Bot')
+        fake.remove_my_profile_photo.assert_not_called()
 
 
 if __name__ == '__main__':
