@@ -18,7 +18,10 @@ from waitress import serve
 LOG = logging.getLogger('qonaq')
 VERSION = 'qonaq-webhook-1'
 # Отпечаток опубликованного токена. Самого секрета в коде нет.
-COMPROMISED_TOKEN_HASH = '3f05b93d6584ec427cf0b9775bcc4ec5d9a127902dc82677a75caaef0717c2cf'
+COMPROMISED_TOKEN_HASHES = {
+    '3f05b93d6584ec427cf0b9775bcc4ec5d9a127902dc82677a75caaef0717c2cf',
+    'f9f5b0e0c4382a2ca47cb2d81eea4645706d45688d1da2227ae6035ac299e8e7',
+}
 apihelper.RETRY_ON_ERROR = False
 
 WELCOME = (
@@ -218,7 +221,7 @@ def main():
     valid = bool(token and re.fullmatch(r'[A-Za-z0-9_-]{32,256}', secret)
                  and parts.scheme == 'https' and parts.hostname
                  and not parts.username and not parts.password and not parts.query and not parts.fragment)
-    if token and hashlib.sha256(token.encode()).hexdigest() == COMPROMISED_TOKEN_HASH:
+    if token and hashlib.sha256(token.encode()).hexdigest() in COMPROMISED_TOKEN_HASHES:
         valid = False
         LOG.error('Published token rejected. Revoke it in BotFather and set a NEW BOT_TOKEN.')
     bot = None
