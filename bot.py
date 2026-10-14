@@ -3,8 +3,8 @@ import time
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-# Вставьте сюда ваш НОВЫЙ токен, который выдал BotFather после сброса!
-BOT_TOKEN = "ВАШ_НОВЫЙ_ТОКЕН"
+# ЧИСТЫЙ ТОКЕН БОТА - СБРАСЫВАЕТ ВСЕ СТАРЫЕ ЗАВИСШИЕ ПРОЦЕССЫ
+BOT_TOKEN = "8991298906:AAEn_QBgRqEBR_KylqR8QVhAVhFUDsSupII"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # --- МИКРО ВЕБ-СЕРВЕР ДЛЯ СТАТУСА LIVE НА RENDER ---
